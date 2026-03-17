@@ -260,35 +260,48 @@ function NativeSlider({
     onChange: (v: number) => void
     isRTL: boolean
 }) {
-    const inputRef = useRef<HTMLInputElement>(null)
+    const inputRef   = useRef<HTMLInputElement>(null)
+    const isDragging = useRef(false)
 
-    // Always-fresh ref — window listener reads this, never stale
+    // Always-fresh — never stale inside any listener
     const stateRef = useRef({ min, max, accentColor, onChange })
     stateRef.current = { min, max, accentColor, onChange }
 
-    // Inject thumb CSS once
     useEffect(() => { injectSliderCSS() }, [])
 
-    // Register ONE native DOM listener — no React synthetic events
     useEffect(() => {
         const el = inputRef.current
         if (!el) return
 
-        const handler = () => {
+        // Track drag state so the sync effect never fires mid-drag
+        const onDown = () => { isDragging.current = true }
+        const onUp   = () => { isDragging.current = false }
+
+        const onInput = () => {
             const { min: mn, max: mx, accentColor: ac, onChange: cb } = stateRef.current
-            // 1. Update fill directly in DOM — instant, no re-render
-            applyFill(el, mn, mx, ac)
-            // 2. Update parent state → numbers re-render
-            cb(Number(el.value))
+            applyFill(el, mn, mx, ac)   // instant DOM fill update
+            cb(Number(el.value))         // trigger parent number re-render
         }
 
-        el.addEventListener("input", handler)
-        return () => el.removeEventListener("input", handler)
-    }, []) // ← empty: safe because handler reads stateRef.current
+        el.addEventListener("mousedown",  onDown)
+        el.addEventListener("touchstart", onDown, { passive: true })
+        window.addEventListener("mouseup",   onUp)
+        window.addEventListener("touchend",  onUp)
+        el.addEventListener("input", onInput)
 
-    // Sync fill when value/color changes from outside (e.g. prop change)
+        return () => {
+            el.removeEventListener("mousedown",  onDown)
+            el.removeEventListener("touchstart", onDown)
+            window.removeEventListener("mouseup",   onUp)
+            window.removeEventListener("touchend",  onUp)
+            el.removeEventListener("input", onInput)
+        }
+    }, []) // ← empty: all live values read from stateRef.current
+
+    // Sync DOM value only when changed EXTERNALLY (e.g. defaultAmount prop)
+    // Skipped while user is dragging — prevents mid-drag thumb reset
     useEffect(() => {
-        if (inputRef.current) {
+        if (inputRef.current && !isDragging.current) {
             inputRef.current.value = String(value)
             applyFill(inputRef.current, min, max, accentColor)
         }
@@ -311,11 +324,11 @@ function NativeSlider({
                 max={max}
                 step={step}
                 defaultValue={value}
-                // No React onChange/onInput — DOM listener handles everything
             />
         </div>
     )
 }
+
 
 // ─── Animated Number ───────────────────────────────────────────────────────────
 function AnimNum({
