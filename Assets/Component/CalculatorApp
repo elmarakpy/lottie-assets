@@ -1,0 +1,1029 @@
+import { addPropertyControls, ControlType } from "framer"
+import { useState, useEffect, useRef } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+type BorderStyle = "gradient" | "solid" | "none"
+
+// ─── Auto RTL detection from URL path ("/ar") ─────────────────────────────────
+function useIsRTL(): boolean {
+    const [isRTL, setIsRTL] = useState(() => {
+        try {
+            return (
+                window.location.pathname.startsWith("/ar") ||
+                window.location.pathname.includes("/ar/")
+            )
+        } catch {
+            return false
+        }
+    })
+
+    useEffect(() => {
+        const check = () => {
+            setIsRTL(
+                window.location.pathname.startsWith("/ar") ||
+                    window.location.pathname.includes("/ar/")
+            )
+        }
+        check()
+        window.addEventListener("popstate", check)
+        return () => window.removeEventListener("popstate", check)
+    }, [])
+
+    return isRTL
+}
+
+// ─── SAR / Riyal Icon ─────────────────────────────────────────────────────────
+const SAR_PATH =
+    "M21.5986 19.5654C21.4559 20.7107 21.3935 21.2069 20.8604 22.3232L12.6758 24C12.8639 22.7935 13.1148 21.8629 13.5225 21.3047L21.5986 19.5654ZM10.1982 11.668L12.6436 11.1416L12.6436 3.47363C13.5549 2.45866 14.1157 2.00286 15.2158 1.42676L15.2158 10.5869L21.5986 9.21289C21.4559 10.3579 21.3934 10.8544 20.8604 11.9707L15.2158 13.1543L15.2158 15.7295L21.5986 14.3896C21.4559 15.5347 21.3934 16.0312 20.8604 17.1475L15.2158 18.3037L15.2158 18.3281L12.6436 18.8555L12.6436 13.6934L10.1982 14.2061L10.1982 17.46L10.1562 17.4678C9.59372 18.4464 8.79958 19.622 8.03418 20.5605L0 22.0781C0.0720248 21.0527 0.222169 20.4751 0.689453 19.4424L7.62598 17.9502L7.62598 14.7451L1.19727 16.0947C1.26931 15.0693 1.42029 14.4919 1.8877 13.459L7.62598 12.2217L7.62598 2.04688C8.53736 1.0319 9.09815 0.576105 10.1982 0L10.1982 11.668Z"
+
+function RiyalIcon({
+    size = 18,
+    gradient = false,
+    uid = "0",
+}: {
+    size?: number
+    gradient?: boolean
+    uid?: string
+}) {
+    const gid = `sar-g-${uid}`
+    return (
+        <svg
+            viewBox="0 0 22 24"
+            width={size}
+            height={size * (24 / 22)}
+            style={{ display: "block", flexShrink: 0 }}
+            aria-hidden
+        >
+            {gradient && (
+                <defs>
+                    <linearGradient id={gid} x1="1" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ffffff" />
+                        <stop offset="25.5%" stopColor="#C5D9E4" />
+                        <stop offset="50.5%" stopColor="#C7D1CB" />
+                        <stop offset="74%" stopColor="#D6C0A6" />
+                        <stop offset="100%" stopColor="#5F5C5A" />
+                    </linearGradient>
+                </defs>
+            )}
+            <path
+                fill={gradient ? `url(#${gid})` : "rgba(255,255,255,0.55)"}
+                d={SAR_PATH}
+            />
+        </svg>
+    )
+}
+
+// ─── Gradient text ─────────────────────────────────────────────────────────────
+const GRAD_TEXT: React.CSSProperties = {
+    background:
+        "linear-gradient(180deg,#fff 0%,#C5D9E4 25.5%,#C7D1CB 50.5%,#D6C0A6 74%,#5F5C5A 100%)",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
+}
+
+// ─── Formatters ────────────────────────────────────────────────────────────────
+const fmtFull = (n: number) =>
+    n.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })
+
+const fmtCompact = (n: number) => {
+    if (n >= 1_000_000)
+        return (
+            (n / 1_000_000).toLocaleString("en-US", {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 2,
+            }) + "M"
+        )
+    if (n >= 1_000)
+        return (
+            (n / 1_000).toLocaleString("en-US", {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 2,
+            }) + "K"
+        )
+    return n.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })
+}
+
+// ─── Container width hook ──────────────────────────────────────────────────────
+function useContainerWidth(ref: React.RefObject<HTMLDivElement>) {
+    const [width, setWidth] = useState(0)
+    useEffect(() => {
+        if (!ref.current) return
+        setWidth(ref.current.getBoundingClientRect().width)
+        const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width))
+        ro.observe(ref.current)
+        return () => ro.disconnect()
+    }, [])
+    return width
+}
+
+// ─── Toggle ────────────────────────────────────────────────────────────────────
+function Toggle({
+    on,
+    onChange,
+}: {
+    on: boolean
+    onChange: (v: boolean) => void
+}) {
+    return (
+        <motion.button
+            role="switch"
+            aria-checked={on}
+            onClick={() => onChange(!on)}
+            animate={{
+                backgroundColor: on ? "#34C759" : "rgba(255,255,255,0.18)",
+            }}
+            transition={{ duration: 0.22 }}
+            style={{
+                width: 64,
+                height: 28,
+                borderRadius: 100,
+                border: "none",
+                cursor: "pointer",
+                position: "relative",
+                flexShrink: 0,
+                padding: 0,
+                outline: "none",
+                direction: "ltr",
+            }}
+        >
+            <motion.span
+                animate={{ x: on ? 25 : 2 }}
+                transition={{
+                    type: "spring",
+                    stiffness: 500,
+                    damping: 36,
+                    mass: 0.8,
+                }}
+                style={{
+                    position: "absolute",
+                    top: 2,
+                    width: 39,
+                    height: 24,
+                    borderRadius: 100,
+                    background: "#fff",
+                    boxShadow:
+                        "0 6px 13px rgba(0,0,0,0.12),0 0.5px 4px rgba(0,0,0,0.12)",
+                    display: "block",
+                }}
+            />
+        </motion.button>
+    )
+}
+
+// ─── Native Slider ─────────────────────────────────────────────────────────────
+const SLIDER_UID = "inv-calc-slider"
+
+function injectSliderCSS() {
+    const id = `${SLIDER_UID}-css`
+    if (document.getElementById(id)) return
+    const el = document.createElement("style")
+    el.id = id
+    el.textContent = `
+        .${SLIDER_UID} {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+            border: none;
+            padding: 0;
+            margin: 0;
+            display: block;
+        }
+        .${SLIDER_UID}::-webkit-slider-runnable-track {
+            height: 6px;
+            border-radius: 3px;
+            background: transparent;
+        }
+        .${SLIDER_UID}::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 38px;
+            height: 24px;
+            border-radius: 100px;
+            background: #ffffff;
+            cursor: grab;
+            margin-top: -9px;
+            box-shadow: 0 6px 13px rgba(0,0,0,0.15), 0 0.5px 4px rgba(0,0,0,0.12);
+            border: none;
+        }
+        .${SLIDER_UID}::-webkit-slider-thumb:active { cursor: grabbing; }
+        .${SLIDER_UID}::-moz-range-track {
+            height: 6px;
+            border-radius: 3px;
+            background: transparent;
+        }
+        .${SLIDER_UID}::-moz-range-thumb {
+            width: 38px;
+            height: 24px;
+            border-radius: 100px;
+            background: #ffffff;
+            cursor: grab;
+            box-shadow: 0 6px 13px rgba(0,0,0,0.15), 0 0.5px 4px rgba(0,0,0,0.12);
+            border: none;
+        }
+    `
+    document.head.appendChild(el)
+}
+
+function NativeSlider({
+    value,
+    min,
+    max,
+    step = 100,
+    accentColor,
+    onChange,
+    isRTL,
+}: {
+    value: number
+    min: number
+    max: number
+    step?: number
+    accentColor: string
+    onChange: (v: number) => void
+    isRTL: boolean
+}) {
+    const inputRef = useRef<HTMLInputElement>(null)
+    const pct = Math.round(((value - min) / (max - min)) * 100)
+
+    // Inject static thumb CSS once
+    useEffect(() => {
+        injectSliderCSS()
+    }, [])
+
+    // Native DOM listener — bypasses React's synthetic event delegation
+    useEffect(() => {
+        const el = inputRef.current
+        if (!el) return
+        const handler = (e: Event) =>
+            onChange(Number((e.target as HTMLInputElement).value))
+        el.addEventListener("input", handler)
+        return () => el.removeEventListener("input", handler)
+    }, [onChange])
+
+    // Imperatively sync DOM value when external state changes
+    useEffect(() => {
+        if (inputRef.current && Number(inputRef.current.value) !== value)
+            inputRef.current.value = String(value)
+    }, [value])
+
+    // Inline background gradient = live fill, no extra DOM nodes needed
+    const fillBg = `linear-gradient(to right,
+        ${accentColor} ${pct}%,
+        rgba(120,120,120,0.30) ${pct}%
+    )`
+
+    return (
+        // scaleX(-1) on wrapper visually flips track for RTL;
+        // the input value stays numerically LTR so math is unaffected
+        <div
+            style={{
+                width: "100%",
+                padding: "8px 0",
+                flexShrink: 0,
+                transform: isRTL ? "scaleX(-1)" : "none",
+            }}
+        >
+            <input
+                ref={inputRef}
+                type="range"
+                className={SLIDER_UID}
+                min={min}
+                max={max}
+                step={step}
+                defaultValue={value}
+                style={{ background: fillBg }}
+                onInput={(e) =>
+                    onChange(Number((e.target as HTMLInputElement).value))
+                }
+            />
+        </div>
+    )
+}
+
+// ─── Animated Number ───────────────────────────────────────────────────────────
+function AnimNum({
+    value,
+    size,
+    iconSize,
+    uid,
+    compact = false,
+    isRTL,
+}: {
+    value: number
+    size: number
+    iconSize: number
+    uid: string
+    compact?: boolean
+    isRTL: boolean
+}) {
+    const display = compact ? fmtCompact(value) : fmtFull(value)
+    return (
+        <div
+            style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                minWidth: 0,
+                flexDirection: isRTL ? "row-reverse" : "row",
+            }}
+        >
+            <RiyalIcon size={iconSize} gradient uid={uid} />
+            <AnimatePresence mode="wait">
+                <motion.span
+                    key={display}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.12 }}
+                    style={{
+                        fontSize: size,
+                        fontWeight: 500,
+                        letterSpacing: "-0.04em",
+                        lineHeight: 1,
+                        whiteSpace: "nowrap",
+                        ...GRAD_TEXT,
+                    }}
+                >
+                    {display}
+                </motion.span>
+            </AnimatePresence>
+        </div>
+    )
+}
+
+// ─── Divider ───────────────────────────────────────────────────────────────────
+const Divider = () => (
+    <div
+        style={{
+            width: "100%",
+            height: 1,
+            flexShrink: 0,
+            background: "rgba(232,232,232,0.20)",
+        }}
+    />
+)
+
+// ─── Graph ─────────────────────────────────────────────────────────────────────
+const G_STEPS = 60
+const G_H = 130
+
+function buildPts(amount: number, rate: number, autoOn: boolean) {
+    return Array.from({ length: G_STEPS + 1 }, (_, i) => ({
+        i,
+        v: autoOn
+            ? amount * Math.pow(1 + rate / 100, i)
+            : amount * Math.max(1 - i * 0.002, 0.1),
+    }))
+}
+
+function toXY(pts: { i: number; v: number }[], W: number, pt = 14, pb = 24) {
+    const vals = pts.map((p) => p.v)
+    const minV = Math.min(...vals)
+    const rng = Math.max(...vals) - minV || 1
+    return pts.map((p) => ({
+        x: (p.i / G_STEPS) * W,
+        y: G_H - pb - ((p.v - minV) / rng) * (G_H - pt - pb),
+    }))
+}
+
+function catmullPath(pts: { x: number; y: number }[], close = false, t = 0.3) {
+    if (!pts.length) return ""
+    let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`
+    for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[Math.max(i - 1, 0)]
+        const p1 = pts[i],
+            p2 = pts[i + 1]
+        const p3 = pts[Math.min(i + 2, pts.length - 1)]
+        const cx1 = p1.x + (p2.x - p0.x) * t
+        const cy1 = p1.y + (p2.y - p0.y) * t
+        const cx2 = p2.x - (p3.x - p1.x) * t
+        const cy2 = p2.y - (p3.y - p1.y) * t
+        d += ` C${cx1.toFixed(1)},${cy1.toFixed(1)} ${cx2.toFixed(1)},${cy2.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+    }
+    if (close) d += ` L${pts[pts.length - 1].x.toFixed(1)},${G_H} L0,${G_H} Z`
+    return d
+}
+
+function Graph({
+    amount,
+    monthlyRate,
+    autoOn,
+    isRTL,
+}: {
+    amount: number
+    monthlyRate: number
+    autoOn: boolean
+    isRTL: boolean
+}) {
+    const wrapRef = useRef<HTMLDivElement>(null)
+    const [w, setW] = useState(400)
+
+    useEffect(() => {
+        if (!wrapRef.current) return
+        setW(wrapRef.current.getBoundingClientRect().width)
+        const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
+        ro.observe(wrapRef.current)
+        return () => ro.disconnect()
+    }, [])
+
+    const pts = toXY(buildPts(amount, monthlyRate, autoOn), w)
+    const line = catmullPath(pts)
+    const fill = catmullPath(pts, true)
+
+    return (
+        <div ref={wrapRef} style={{ width: "100%", height: G_H }}>
+            <svg
+                viewBox={`0 0 ${w} ${G_H}`}
+                width="100%"
+                height={G_H}
+                preserveAspectRatio="none"
+                style={{
+                    display: "block",
+                    overflow: "visible",
+                    // Mirror horizontally for RTL so curve grows right → left
+                    transform: isRTL ? "scaleX(-1)" : "none",
+                    transformOrigin: "center center",
+                }}
+            >
+                <defs>
+                    <linearGradient id="g-line" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="rgba(255,255,255,0.25)" />
+                        <stop offset="35%" stopColor="#D5C0A7" />
+                        <stop offset="65%" stopColor="#C7D1CB" />
+                        <stop offset="100%" stopColor="#ffffff" />
+                    </linearGradient>
+                    <linearGradient id="g-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgba(197,217,228,0.22)" />
+                        <stop offset="100%" stopColor="rgba(197,217,228,0)" />
+                    </linearGradient>
+                </defs>
+                <path d={fill} fill="url(#g-fill)" />
+                <path
+                    d={line}
+                    fill="none"
+                    stroke="url(#g-line)"
+                    strokeWidth={3.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </svg>
+        </div>
+    )
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+export default function InvestmentCalculator({
+    minAmount = 1000,
+    maxAmount = 200000,
+    defaultAmount = 99212,
+    monthlyRate = 3.24,
+    showAutoInvest = true,
+    autoInvestOn = true,
+
+    labelTitle = "Calculator",
+    labelIfYouInvest = "If you invest",
+    labelAutoInvest = "Auto Invest",
+    labelYoudEarn = "You'd earn",
+    labelNextMonth = "Next month",
+    labelNextYear = "Next year",
+    labelNextFiveYear = "Next 5 years",
+
+    cardHeight = 577,
+    borderRadius = 24,
+    paddingH = 32,
+    paddingV = 32,
+
+    cardBg = "#1D2D3A",
+    titleColor = "#A6A6A6",
+    labelColor = "#ffffff",
+    subLabelColor = "#A6A6A6",
+    accentColor = "#C4E429",
+
+    borderStyle = "gradient" as BorderStyle,
+    borderWidth = 1,
+    borderOpacity = 0.6,
+}: {
+    minAmount?: number
+    maxAmount?: number
+    defaultAmount?: number
+    monthlyRate?: number
+    showAutoInvest?: boolean
+    autoInvestOn?: boolean
+
+    labelTitle?: string
+    labelIfYouInvest?: string
+    labelAutoInvest?: string
+    labelYoudEarn?: string
+    labelNextMonth?: string
+    labelNextYear?: string
+    labelNextFiveYear?: string
+
+    cardHeight?: number
+    borderRadius?: number
+    paddingH?: number
+    paddingV?: number
+
+    cardBg?: string
+    titleColor?: string
+    labelColor?: string
+    subLabelColor?: string
+    accentColor?: string
+
+    borderStyle?: BorderStyle
+    borderWidth?: number
+    borderOpacity?: number
+}) {
+    // ── Auto RTL from URL ─────────────────────────────────────────────────────
+    const isRTL = useIsRTL()
+    const dir = isRTL ? "rtl" : "ltr"
+
+    const containerRef = useRef<HTMLDivElement>(null)
+    const containerW = useContainerWidth(containerRef)
+    const isMobile = containerW > 0 && containerW < 480
+
+    const [amount, setAmount] = useState(defaultAmount)
+    const [autoOn, setAutoOn] = useState(autoInvestOn)
+
+    useEffect(() => setAmount(defaultAmount), [defaultAmount])
+    useEffect(() => setAutoOn(autoInvestOn), [autoInvestOn])
+
+    const monthlyEarning = amount * (monthlyRate / 100)
+    const yearlyEarning = amount * (Math.pow(1 + monthlyRate / 100, 12) - 1)
+    const fiveYrEarning = amount * (Math.pow(1 + monthlyRate / 100, 60) - 1)
+
+    const borderCSS = (): React.CSSProperties => {
+        if (borderStyle === "none") return {}
+        if (borderStyle === "solid")
+            return {
+                boxShadow: `inset 0 0 0 ${borderWidth}px rgba(255,255,255,${borderOpacity})`,
+            }
+        return {
+            border: `${borderWidth}px solid transparent`,
+            backgroundImage: `
+                linear-gradient(${cardBg}, ${cardBg}),
+                linear-gradient(180deg,
+                    rgba(255,255,255,${borderOpacity}) 0%,
+                    rgba(255,255,255,${(borderOpacity * 0.08).toFixed(2)}) 100%
+                )
+            `,
+            backgroundOrigin: "border-box",
+            backgroundClip: "padding-box, border-box",
+        }
+    }
+
+    const earnings = [
+        { label: labelNextMonth, value: monthlyEarning, uid: "m" },
+        { label: labelNextYear, value: yearlyEarning, uid: "y" },
+        { label: labelNextFiveYear, value: fiveYrEarning, uid: "5" },
+    ]
+
+    return (
+        <div
+            ref={containerRef}
+            dir={dir}
+            style={{
+                width: "100%",
+                height: cardHeight,
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                gap: 20,
+                padding: `${paddingV}px ${paddingH}px`,
+                overflow: "hidden",
+                borderRadius,
+                position: "relative",
+                ...(borderStyle !== "gradient" ? { background: cardBg } : {}),
+                boxShadow: "0 1px 2px rgba(20,21,26,0.05)",
+                fontFamily: "'Suisse Int\\'l','Inter',sans-serif",
+                lineHeight: 1,
+                flexShrink: 0,
+                color: "#fff",
+                WebkitFontSmoothing: "antialiased",
+                ...borderCSS(),
+            }}
+        >
+            {/* Soft-light overlay */}
+            <div
+                aria-hidden
+                style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius,
+                    background:
+                        "linear-gradient(180deg,rgba(255,255,255,0.20) 0%,rgba(255,255,255,0) 55%)",
+                    mixBlendMode: "soft-light",
+                    pointerEvents: "none",
+                    zIndex: 0,
+                }}
+            />
+
+            <div
+                style={{
+                    position: "relative",
+                    zIndex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 20,
+                    height: "100%",
+                    minHeight: 0,
+                }}
+            >
+                {/* ── Title ──────────────────────────────────────────────── */}
+                <div
+                    style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        color: titleColor,
+                        fontFamily: "'Inter',sans-serif",
+                        lineHeight: 1,
+                        flexShrink: 0,
+                    }}
+                >
+                    {labelTitle}
+                </div>
+
+                <Divider />
+
+                {/* ── Amount + Toggle row ─────────────────────────────────── */}
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-end",
+                        gap: 12,
+                        flexShrink: 0,
+                        flexWrap: "wrap",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 12,
+                            minWidth: 0,
+                        }}
+                    >
+                        <span
+                            style={{
+                                fontSize: 16,
+                                color: labelColor,
+                                lineHeight: "140%",
+                            }}
+                        >
+                            {labelIfYouInvest}
+                        </span>
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
+                                flexDirection: isRTL ? "row-reverse" : "row",
+                            }}
+                        >
+                            <RiyalIcon
+                                size={isMobile ? 28 : 42}
+                                gradient
+                                uid="input"
+                            />
+                            <AnimatePresence mode="wait">
+                                <motion.span
+                                    key={fmtFull(amount)}
+                                    initial={{ opacity: 0, y: 6 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -6 }}
+                                    transition={{ duration: 0.14 }}
+                                    style={{
+                                        fontSize: isMobile
+                                            ? 36
+                                            : "clamp(32px,4vw,52px)",
+                                        fontWeight: 400,
+                                        letterSpacing: "-0.01em",
+                                        lineHeight: 1.2,
+                                        whiteSpace: "nowrap",
+                                        ...GRAD_TEXT,
+                                    }}
+                                >
+                                    {fmtFull(amount)}
+                                </motion.span>
+                            </AnimatePresence>
+                        </div>
+                    </div>
+
+                    {showAutoInvest && (
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                                paddingBottom: 4,
+                                flexShrink: 0,
+                                flexDirection: isRTL ? "row-reverse" : "row",
+                            }}
+                        >
+                            <span
+                                style={{
+                                    fontSize: 16,
+                                    color: labelColor,
+                                    whiteSpace: "nowrap",
+                                }}
+                            >
+                                {labelAutoInvest}
+                            </span>
+                            <Toggle on={autoOn} onChange={setAutoOn} />
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Slider ─────────────────────────────────────────────── */}
+                <NativeSlider
+                    value={amount}
+                    min={minAmount}
+                    max={maxAmount}
+                    step={100}
+                    accentColor={accentColor}
+                    onChange={setAmount}
+                    isRTL={isRTL}
+                />
+
+                <Divider />
+
+                {/* ── You'd earn label ───────────────────────────────────── */}
+                <span
+                    style={{
+                        fontSize: 16,
+                        color: labelColor,
+                        flexShrink: 0,
+                        lineHeight: "140%",
+                    }}
+                >
+                    {labelYoudEarn}
+                </span>
+
+                {/* ── Earnings row ───────────────────────────────────────── */}
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: isMobile ? "column" : "row",
+                        width: "100%",
+                        flexShrink: 0,
+                    }}
+                >
+                    {earnings.map(({ label, value, uid }, idx) => (
+                        <div
+                            key={uid}
+                            style={{
+                                flex: isMobile ? "none" : 1,
+                                width: isMobile ? "100%" : undefined,
+                                display: "flex",
+                                flexDirection: isMobile ? "row" : "column",
+                                alignItems: isMobile ? "center" : "flex-start",
+                                justifyContent: isMobile
+                                    ? "space-between"
+                                    : "flex-start",
+                                gap: isMobile ? 0 : 8,
+                                minWidth: 0,
+                                //direction: "ltr",
+                                paddingTop: isMobile && idx > 0 ? 14 : 0,
+                                paddingBottom: isMobile && idx < 2 ? 14 : 0,
+                                borderBottom:
+                                    isMobile && idx < 2
+                                        ? "1px solid rgba(232,232,232,0.15)"
+                                        : "none",
+                            }}
+                        >
+                            <span
+                                style={{
+                                    fontSize: 16,
+                                    color: subLabelColor,
+                                    fontWeight: 400,
+                                    lineHeight: "140%",
+                                    whiteSpace: "nowrap",
+                                    order: isMobile ? 0 : 1,
+                                }}
+                            >
+                                {label}
+                            </span>
+                            <div
+                                style={{ order: isMobile ? 1 : 0, minWidth: 0 }}
+                            >
+                                <AnimNum
+                                    value={value}
+                                    size={isMobile ? 22 : 28}
+                                    iconSize={isMobile ? 14 : 18}
+                                    uid={uid}
+                                    compact
+                                    isRTL={isRTL}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* ── Graph ──────────────────────────────────────────────── */}
+                <div
+                    style={{
+                        flex: 1,
+                        minHeight: 60,
+                        display: "flex",
+                        alignItems: "flex-end",
+                        overflow: "hidden",
+                    }}
+                >
+                    <Graph
+                        amount={amount}
+                        monthlyRate={monthlyRate}
+                        autoOn={autoOn}
+                        isRTL={isRTL}
+                    />
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ─── Property Controls ─────────────────────────────────────────────────────────
+addPropertyControls(InvestmentCalculator, {
+    labelTitle: {
+        type: ControlType.String,
+        title: "Card Title",
+        defaultValue: "Calculator",
+    },
+    labelIfYouInvest: {
+        type: ControlType.String,
+        title: "Input Label",
+        defaultValue: "If you invest",
+    },
+    labelAutoInvest: {
+        type: ControlType.String,
+        title: "Toggle Label",
+        defaultValue: "Auto Invest",
+        hidden: (p: any) => !p.showAutoInvest,
+    },
+    labelYoudEarn: {
+        type: ControlType.String,
+        title: "Output Label",
+        defaultValue: "You'd earn",
+    },
+    labelNextMonth: {
+        type: ControlType.String,
+        title: "Period 1",
+        defaultValue: "Next month",
+    },
+    labelNextYear: {
+        type: ControlType.String,
+        title: "Period 2",
+        defaultValue: "Next year",
+    },
+    labelNextFiveYear: {
+        type: ControlType.String,
+        title: "Period 3",
+        defaultValue: "Next 5 years",
+    },
+
+    defaultAmount: {
+        type: ControlType.Number,
+        title: "Default Amount",
+        defaultValue: 99212,
+        min: 1000,
+        max: 200000,
+        step: 100,
+        displayStepper: true,
+    },
+    minAmount: {
+        type: ControlType.Number,
+        title: "Min Amount",
+        defaultValue: 1000,
+        min: 100,
+        max: 50000,
+        step: 100,
+    },
+    maxAmount: {
+        type: ControlType.Number,
+        title: "Max Amount",
+        defaultValue: 200000,
+        min: 10000,
+        max: 1000000,
+        step: 1000,
+    },
+    monthlyRate: {
+        type: ControlType.Number,
+        title: "Monthly Rate %",
+        defaultValue: 3.24,
+        min: 0.1,
+        max: 20,
+        step: 0.01,
+    },
+    showAutoInvest: {
+        type: ControlType.Boolean,
+        title: "Show Toggle",
+        defaultValue: true,
+    },
+    autoInvestOn: {
+        type: ControlType.Boolean,
+        title: "Toggle Default",
+        defaultValue: true,
+        hidden: (p: any) => !p.showAutoInvest,
+    },
+
+    cardHeight: {
+        type: ControlType.Number,
+        title: "Height",
+        defaultValue: 577,
+        min: 400,
+        max: 900,
+        step: 1,
+        displayStepper: true,
+    },
+    borderRadius: {
+        type: ControlType.Number,
+        title: "Radius",
+        defaultValue: 24,
+        min: 0,
+        max: 48,
+        displayStepper: true,
+    },
+    paddingH: {
+        type: ControlType.Number,
+        title: "Padding H",
+        defaultValue: 32,
+        min: 12,
+        max: 80,
+        displayStepper: true,
+    },
+    paddingV: {
+        type: ControlType.Number,
+        title: "Padding V",
+        defaultValue: 32,
+        min: 12,
+        max: 80,
+        displayStepper: true,
+    },
+
+    cardBg: {
+        type: ControlType.Color,
+        title: "Background",
+        defaultValue: "#1D2D3A",
+    },
+    titleColor: {
+        type: ControlType.Color,
+        title: "Title Color",
+        defaultValue: "#A6A6A6",
+    },
+    labelColor: {
+        type: ControlType.Color,
+        title: "Label Color",
+        defaultValue: "#ffffff",
+    },
+    subLabelColor: {
+        type: ControlType.Color,
+        title: "Sub Label",
+        defaultValue: "#A6A6A6",
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Accent",
+        defaultValue: "#C4E429",
+    },
+
+    borderStyle: {
+        type: ControlType.Enum,
+        title: "Border",
+        defaultValue: "gradient",
+        options: ["gradient", "solid", "none"],
+        optionTitles: ["Gradient", "Solid", "None"],
+        displaySegmentedControl: true,
+    },
+    borderWidth: {
+        type: ControlType.Number,
+        title: "Border Width",
+        defaultValue: 1,
+        min: 0,
+        max: 4,
+        step: 0.5,
+        displayStepper: true,
+        hidden: (p: any) => p.borderStyle === "none",
+    },
+    borderOpacity: {
+        type: ControlType.Number,
+        title: "Border Opacity",
+        defaultValue: 0.6,
+        min: 0,
+        max: 1,
+        step: 0.05,
+        hidden: (p: any) => p.borderStyle === "none",
+    },
+})
