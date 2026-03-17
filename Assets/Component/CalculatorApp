@@ -179,16 +179,13 @@ function Toggle({
 }
 
 // ─── Native Slider ─────────────────────────────────────────────────────────────
-// ─── Native Slider ─────────────────────────────────────────────────────────────
-const SLIDER_UID = "inv-calc-slider"
-
 function injectSliderCSS() {
-    const id = `${SLIDER_UID}-css`
+    const id = "inv-slider-css"
     if (document.getElementById(id)) return
     const el = document.createElement("style")
     el.id = id
     el.textContent = `
-        .${SLIDER_UID} {
+        .inv-slider {
             -webkit-appearance: none;
             appearance: none;
             width: 100%;
@@ -200,13 +197,9 @@ function injectSliderCSS() {
             padding: 0;
             margin: 0;
             display: block;
+            background: rgba(120,120,120,0.30);
         }
-        .${SLIDER_UID}::-webkit-slider-runnable-track {
-            height: 6px;
-            border-radius: 3px;
-            background: transparent;
-        }
-        .${SLIDER_UID}::-webkit-slider-thumb {
+        .inv-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
             width: 38px;
@@ -218,13 +211,8 @@ function injectSliderCSS() {
             box-shadow: 0 6px 13px rgba(0,0,0,0.15), 0 0.5px 4px rgba(0,0,0,0.12);
             border: none;
         }
-        .${SLIDER_UID}::-webkit-slider-thumb:active { cursor: grabbing; }
-        .${SLIDER_UID}::-moz-range-track {
-            height: 6px;
-            border-radius: 3px;
-            background: transparent;
-        }
-        .${SLIDER_UID}::-moz-range-thumb {
+        .inv-slider::-webkit-slider-thumb:active { cursor: grabbing; }
+        .inv-slider::-moz-range-thumb {
             width: 38px;
             height: 24px;
             border-radius: 100px;
@@ -237,10 +225,69 @@ function injectSliderCSS() {
     document.head.appendChild(el)
 }
 
-// Helper: compute and apply fill directly to DOM element
-function applyFill(el: HTMLInputElement, min: number, max: number, accentColor: string) {
-    const pct = Math.round(((Number(el.value) - min) / (max - min)) * 100)
-    el.style.background = `linear-gradient(to right, ${accentColor} ${pct}%, rgba(120,120,120,0.30) ${pct}%)`
+function NativeSlider({
+    value,
+    min,
+    max,
+    step = 100,
+    accentColor,
+    onChange,
+    isRTL,
+}: {
+    value: number
+    min: number
+    max: number
+    step?: number
+    accentColor: string
+    onChange: (v: number) => void
+    isRTL: boolean
+}) {
+    useEffect(() => { injectSliderCSS() }, [])
+
+    // key= forces a full remount when min/max/defaultValue change externally.
+    // Inside a drag, none of these change — so the input is never remounted
+    // mid-drag and the browser owns the thumb position 100%.
+    const mountKey = `${min}-${max}-${value}`
+
+    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const v = Number(e.target.value)
+        const pct = Math.round(((v - min) / (max - min)) * 100)
+        e.target.style.background = `linear-gradient(to right,
+            ${accentColor} ${pct}%,
+            rgba(120,120,120,0.30) ${pct}%)`
+        onChange(v)
+    }
+
+    const initPct = Math.round(((value - min) / (max - min)) * 100)
+    const initBg = `linear-gradient(to right,
+        ${accentColor} ${initPct}%,
+        rgba(120,120,120,0.30) ${initPct}%)`
+
+    return (
+        <div style={{
+            width: "100%",
+            padding: "8px 0",
+            flexShrink: 0,
+            direction: "ltr", // always LTR — RTL is handled by fill swap below
+        }}>
+            <input
+                key={mountKey}
+                type="range"
+                className="inv-slider"
+                min={min}
+                max={max}
+                step={step}
+                defaultValue={value}
+                style={{
+                    background: initBg,
+                    direction: "ltr",
+                    // RTL: flip fill direction visually via scaleX
+                    transform: isRTL ? "scaleX(-1)" : "none",
+                }}
+                onChange={handleInput}
+            />
+        </div>
+    )
 }
 
 // ─── Pointer Slider ────────────────────────────────────────────────────────────
