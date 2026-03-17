@@ -243,7 +243,11 @@ function applyFill(el: HTMLInputElement, min: number, max: number, accentColor: 
     el.style.background = `linear-gradient(to right, ${accentColor} ${pct}%, rgba(120,120,120,0.30) ${pct}%)`
 }
 
-function NativeSlider({
+// ─── Pointer Slider ────────────────────────────────────────────────────────────
+// Uses setPointerCapture — most reliable drag primitive in browser/Framer.
+// No native <input>, no window listeners, no stale closures.
+
+function PointerSlider({
     value,
     min,
     max,
@@ -260,71 +264,109 @@ function NativeSlider({
     onChange: (v: number) => void
     isRTL: boolean
 }) {
-    const inputRef   = useRef<HTMLInputElement>(null)
-    const isDragging = useRef(false)
+    const trackRef = useRef<HTMLDivElement>(null)
 
-    // Always-fresh — never stale inside any listener
-    const stateRef = useRef({ min, max, accentColor, onChange })
-    stateRef.current = { min, max, accentColor, onChange }
+    const pct = Math.max(0, Math.min(1, (value - min) / (max - min)))
 
-    useEffect(() => { injectSliderCSS() }, [])
+    const valueFromPointer = (e: React.PointerEvent) => {
+        const rect = trackRef.current!.getBoundingClientRect()
+        let ratio = (e.clientX - rect.left) / rect.width
+        if (isRTL) ratio = 1 - ratio
+        ratio = Math.max(0, Math.min(1, ratio))
+        const raw = ratio * (max - min) + min
+        return Math.max(min, Math.min(max, Math.round(raw / step) * step))
+    }
 
-    useEffect(() => {
-        const el = inputRef.current
-        if (!el) return
+    const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        onChange(valueFromPointer(e))
+    }
 
-        // Track drag state so the sync effect never fires mid-drag
-        const onDown = () => { isDragging.current = true }
-        const onUp   = () => { isDragging.current = false }
+    const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+        onChange(valueFromPointer(e))
+    }
 
-        const onInput = () => {
-            const { min: mn, max: mx, accentColor: ac, onChange: cb } = stateRef.current
-            applyFill(el, mn, mx, ac)   // instant DOM fill update
-            cb(Number(el.value))         // trigger parent number re-render
-        }
+    const onKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "ArrowRight") onChange(Math.min(max, value + step))
+        if (e.key === "ArrowLeft")  onChange(Math.max(min, value - step))
+    }
 
-        el.addEventListener("mousedown",  onDown)
-        el.addEventListener("touchstart", onDown, { passive: true })
-        window.addEventListener("mouseup",   onUp)
-        window.addEventListener("touchend",  onUp)
-        el.addEventListener("input", onInput)
-
-        return () => {
-            el.removeEventListener("mousedown",  onDown)
-            el.removeEventListener("touchstart", onDown)
-            window.removeEventListener("mouseup",   onUp)
-            window.removeEventListener("touchend",  onUp)
-            el.removeEventListener("input", onInput)
-        }
-    }, []) // ← empty: all live values read from stateRef.current
-
-    // Sync DOM value only when changed EXTERNALLY (e.g. defaultAmount prop)
-    // Skipped while user is dragging — prevents mid-drag thumb reset
-    useEffect(() => {
-        if (inputRef.current && !isDragging.current) {
-            inputRef.current.value = String(value)
-            applyFill(inputRef.current, min, max, accentColor)
-        }
-    }, [value, min, max, accentColor])
+    const TRACK_H = 6
+    const THUMB_W = 38
+    const THUMB_H = 24
 
     return (
         <div
+            ref={trackRef}
+            role="slider"
+            tabIndex={0}
+            aria-valuemin={min}
+            aria-valuemax={max}
+            aria-valuenow={value}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onKeyDown={onKeyDown}
             style={{
+                position: "relative",
                 width: "100%",
-                padding: "8px 0",
+                height: THUMB_H + 16,
+                display: "flex",
+                alignItems: "center",
+                cursor: "pointer",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                touchAction: "none",
+                outline: "none",
                 flexShrink: 0,
-                transform: isRTL ? "scaleX(-1)" : "none",
             }}
         >
-            <input
-                ref={inputRef}
-                type="range"
-                className={SLIDER_UID}
-                min={min}
-                max={max}
-                step={step}
-                defaultValue={value}
-            />
+            {/* Track background */}
+            <div style={{
+                position: "absolute",
+                left: 0, right: 0,
+                height: TRACK_H,
+                borderRadius: TRACK_H / 2,
+                background: "rgba(120,120,120,0.28)",
+                pointerEvents: "none",
+            }} />
+
+            {/* Active fill */}
+            <div style={{
+                position: "absolute",
+                left: isRTL ? `${(1 - pct) * 100}%` : 0,
+                right: isRTL ? 0 : `${(1 - pct) * 100}%`,
+                height: TRACK_H,
+                borderRadius: TRACK_H / 2,
+                background: accentColor,
+                pointerEvents: "none",
+            }} />
+
+            {/* Tick marks */}
+            {[0, 0.25, 0.5, 0.75, 1].map(t => (
+                <div key={t} style={{
+                    position: "absolute",
+                    left: `${t * 100}%`,
+                    top: "50%",
+                    transform: "translate(-50%, -50%)",
+                    width: 4, height: 4,
+                    borderRadius: "50%",
+                    background: "rgba(60,60,67,0.25)",
+                    pointerEvents: "none",
+                }} />
+            ))}
+
+            {/* Pill thumb — clamped so it never overflows edges */}
+            <div style={{
+                position: "absolute",
+                left: `clamp(0px, calc(${pct * 100}% - ${THUMB_W / 2}px), calc(100% - ${THUMB_W}px))`,
+                width: THUMB_W,
+                height: THUMB_H,
+                borderRadius: 100,
+                background: "#ffffff",
+                boxShadow: "0 6px 13px rgba(0,0,0,0.15), 0 0.5px 4px rgba(0,0,0,0.12)",
+                pointerEvents: "none",
+            }} />
         </div>
     )
 }
@@ -768,15 +810,15 @@ export default function InvestmentCalculator({
                 </div>
 
                 {/* ── Slider ─────────────────────────────────────────────── */}
-                <NativeSlider
-                    value={amount}
-                    min={minAmount}
-                    max={maxAmount}
-                    step={100}
-                    accentColor={accentColor}
-                    onChange={setAmount}
-                    isRTL={isRTL}
-                />
+                <PointerSlider
+    value={amount}
+    min={minAmount}
+    max={maxAmount}
+    step={100}
+    accentColor={accentColor}
+    onChange={setAmount}
+    isRTL={isRTL}
+/>
 
                 <Divider />
 
