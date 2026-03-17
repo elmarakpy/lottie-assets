@@ -249,14 +249,15 @@ function NativeSlider({
     // mid-drag and the browser owns the thumb position 100%.
     const mountKey = `${min}-${max}-${value}`
 
-    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const v = Number(e.target.value)
-        const pct = Math.round(((v - min) / (max - min)) * 100)
-        e.target.style.background = `linear-gradient(to right,
-            ${accentColor} ${pct}%,
-            rgba(120,120,120,0.30) ${pct}%)`
-        onChange(v)
-    }
+    const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const target = e.target as HTMLInputElement
+    const v = Number(target.value)
+    const pct = Math.round(((v - min) / (max - min)) * 100)
+    target.style.background = `linear-gradient(to right,
+        ${accentColor} ${pct}%,
+        rgba(120,120,120,0.30) ${pct}%)`
+    onChange(v)
+}
 
     const initPct = Math.round(((value - min) / (max - min)) * 100)
     const initBg = `linear-gradient(to right,
@@ -284,7 +285,7 @@ function NativeSlider({
                     // RTL: flip fill direction visually via scaleX
                     transform: isRTL ? "scaleX(-1)" : "none",
                 }}
-                onChange={handleInput}
+                onInput={handleInput as any}
             />
         </div>
     )
