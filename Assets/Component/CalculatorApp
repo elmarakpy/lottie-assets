@@ -247,7 +247,7 @@ function NativeSlider({
     // key= forces a full remount when min/max/defaultValue change externally.
     // Inside a drag, none of these change — so the input is never remounted
     // mid-drag and the browser owns the thumb position 100%.
-    const mountKey = `${min}-${max}-${value}`
+    const mountKey = `${min}-${max}`
 
     const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
     const target = e.target as HTMLInputElement
